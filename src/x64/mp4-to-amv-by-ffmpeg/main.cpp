@@ -9,6 +9,8 @@
 #include <shobjidl.h>
 #include <filesystem>
 
+
+
 // ============ 工具函数 ============
 
 std::string WStringToUTF8(const std::wstring& wstr) {
@@ -218,6 +220,7 @@ int main() {
 
     if (!ffOk) {
         std::cout << "FFmpeg 状态异常" << std::endl;
+        system("pause");
         return 1;
     }
 
