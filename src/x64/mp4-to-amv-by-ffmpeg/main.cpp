@@ -1,17 +1,85 @@
+/**
+ * @file    main.cpp
+ * @author  Zavian
+ * @version v0.0.1-beta.2
+ * @date    20261025
+ * @brief   程序入口
+ */
+
+
+
+
 #include "app.hpp"
 #include <iostream>
 #include "abab.hpp"
+#include <chrono>
 #include <string>
 #include <vector>
 #include <windows.h>
 #include <cstdlib>
 #include <format>
 #include <shobjidl.h>
+#include <fstream>
 #include <filesystem>
 
 
+#ifdef _WIN32
+#include <direct.h>
+#define GetCurrentDir _getcwd
+#else
+#include <unistd.h>
+#define GetCurrentDir getcwd
+#endif
+
 
 // ============ 工具函数 ============
+
+
+std::string getCurrentDir() {
+    char buffer[1024];
+    if (GetCurrentDir(buffer, sizeof(buffer)) != nullptr) {
+        return std::string(buffer);
+    }
+    return "";
+}
+
+
+// UTF-8 std::string 路径 -> std::filesystem::path（Windows 中文路径必需）
+static std::filesystem::path Utf8ToPath(const std::string& utf8) {
+#if defined(_WIN32)
+    if (utf8.empty()) return {};
+    int n = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(), NULL, 0);
+    if (n <= 0) return {};
+    std::wstring w(n, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(), &w[0], n);
+    return std::filesystem::path(w);
+#else
+    return std::filesystem::path(utf8);
+#endif
+}
+
+// 写入文件，返回是否成功
+static bool WriteTextFile(const std::string& utf8Path, const std::string& data) {
+    std::ofstream ofs(Utf8ToPath(utf8Path), std::ios::binary | std::ios::trunc);
+    if (!ofs) return false;
+    ofs.write(data.data(), (std::streamsize)data.size());
+    ofs.close();
+    return (bool)ofs;
+}
+
+
+
+
+
+
+static std::wstring Utf8ToWide(const std::string& s) {
+    if (s.empty()) return L"";
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), NULL, 0);
+    std::wstring w(n, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
+    return w;
+}
+
 
 std::string WStringToUTF8(const std::wstring& wstr) {
     if (wstr.empty()) return std::string();
@@ -35,7 +103,7 @@ static std::string extractVersion(const std::string& output) {
     return output.substr(pos, end - pos);
 }
 
-// ============ 文件夹选择 ============
+// ============ 输出文件夹选择 ============
 
 std::wstring SelectFolder() {
     std::wstring result;
@@ -87,11 +155,11 @@ std::pair<bool, std::string> selectFile() {
     if (GetOpenFileNameW(&ofn) != TRUE)
         return { false, "" };
 
-    // 复用 WStringToUTF8
+
     return { true, WStringToUTF8(szFile) };
 }
 
-// ============ ffmpeg / ffprobe 检测（内部实现未改动） ============
+// ============ ffmpeg / ffprobe 检测 ============
 
 std::pair<bool, std::string> canRunFFmpeg() {
     SECURITY_ATTRIBUTES sa{ sizeof(sa), nullptr, TRUE };
@@ -208,13 +276,18 @@ std::pair<bool, std::string> canRunFFprobe() {
 // ============ 主流程 ============
 
 int main() {
+    // utf8
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
+
+    std::string CurrentDir;
+    CurrentDir = getCurrentDir();
+
 
     std::cout << app.name << " Ver" << app.version
         << " (build:" << app.build << ")" << std::endl;
 
-    // --- 检测 ffmpeg / ffprobe ---
+    // 检测 ffmpeg / ffprobe
     auto [ffOk, ffVer] = canRunFFmpeg();
     auto [fpOk, fpVer] = canRunFFprobe();
 
@@ -224,7 +297,7 @@ int main() {
         return 1;
     }
 
-    std::cout << "FFmpeg  版本 ：" << ffVer << std::endl;
+    std::cout << "FFmpeg 版本 ：" << ffVer << std::endl;
     if (!fpOk) {
         std::cout << "FFprobe 状态异常，本次转码将不会使用进度条" << std::endl;
     }
@@ -234,76 +307,93 @@ int main() {
 
     // --- 选择源文件（带确认循环）---
     std::string filename;
+    std::string outFolder;
+    std::string args= "-version";
+
+    // 选择源文件与输出目录
     while (true) {
+        HRESULT hr = CoInitialize(nullptr);
+        if (FAILED(hr)) {
+            std::cerr << "COM 初始化失败!" << std::endl;
+            return 1;
+        }
         auto [ok, path] = selectFile();
         if (!ok || path.empty()) {
             std::cout << "未选择文件" << std::endl;
             return 1;
         }
-
+        filename = path;
         std::cout << "源文件：" << path << std::endl;
+        // --- COM 初始化（必须在 SelectFolder 之前）---
+        hr = CoInitialize(nullptr);
+        if (FAILED(hr)) {
+            std::cerr << "COM 初始化失败!" << std::endl;
+            return 1;
+        }
+
+        // --- 选择输出文件夹 ---
+        
+        while (true) {
+            std::wstring folder = SelectFolder();
+            if (folder.empty()) {
+                std::cout << "未选择，请重新选择输出文件夹" << std::endl;
+                continue;
+            }
+            outFolder = WStringToUTF8(folder);
+
+            break;
+        }
+
+        CoUninitialize();
+
+        hr = CoInitialize(nullptr);
+        if (FAILED(hr)) {
+            std::cerr << "COM 初始化失败!" << std::endl;
+            return 1;
+        }
+
+        // 1. 提取文件名
+        std::filesystem::path srcPath(Utf8ToWide(filename));
+        //  std::cout << "filename" << filename << std::endl;测试
+        std::string stemName = WStringToUTF8(srcPath.stem().wstring());
+
+        //std::cout << "stemName" << stemName << std::endl;测试
+
+        // 2. 拼接输出绝对路径
+        std::string finalOutputPath = "\"" + outFolder + "\\" + stemName + ".amv\"";
+
+        // 3. 拼装 FFmpeg 参数
+        args = std::format(
+            R"(-y -i "{}" -vf "scale=640:480:force_original_aspect_ratio=decrease,pad=640:480:(ow-iw)/2:(oh-ih)/2:black" -ar 22050 -ac 1 -r 25 -c:v amv -c:a adpcm_ima_amv -block_size 882 {})",
+            filename, finalOutputPath);
+
+        
+
+        std::string otput = outFolder + "\\" + stemName + ".amv";
+        std::cout << "输出文件夹（输出名称 " << stemName << ".amv）: " << otput << std::endl;
+
+
+
         std::cout << "确定？(y/n) ";
         std::string ans;
         std::cin >> ans;
         if (ans == "y" || ans == "Y") {
-            filename = path;
+            CoUninitialize();
             break;
         }
-    }
-
-    // --- COM 初始化（必须在 SelectFolder 之前）---
-    HRESULT hr = CoInitialize(nullptr);
-    if (FAILED(hr)) {
-        std::cerr << "COM 初始化失败!" << std::endl;
-        return 1;
-    }
-
-    // --- 选择输出文件夹 ---
-    std::string outFolder;
-    while (true) {
-        std::wstring folder = SelectFolder();
-        if (folder.empty()) {
-            std::cout << "未选择，请重新选择输出文件夹" << std::endl;
-            continue;
+        else {
+            return 0;
         }
-        outFolder = WStringToUTF8(folder);
-        //std::cout << "输出文件夹（输出名称 output.amv）: " << outFolder << std::endl;
-        break;
     }
-
     CoUninitialize();
 
-    // ==== 以下 ffmpeg 调用逻辑保持原样，只是把 return 位置修正了 ====
-
-    //// 1. 自己把输出路径拼出来（加上反斜杠，并确保路径带有双引号）
-    //std::string outputPath = "\"" + outFolder + "\\output.amv\"";
-
-    //// 2. 在 -i 和 输出路径都加上双引号（防止路径带空格出错）
-    //std::string args = std::format(
-    //    R"(-y -i "{}" -vf "scale=640:480:force_original_aspect_ratio=decrease,pad=640:480:(ow-iw)/2:(oh-ih)/2:black" -ar 22050 -ac 1 -r 25 -c:v amv -c:a adpcm_ima_amv -block_size 882 {})",
-    //    filename, outputPath);
-
-    CoUninitialize();
-
-    // 1. 从源文件路径中提取纯文件名（不带目录，不带后缀）
-    // 比如：filename = "D:\\Videos\\my video.mp4" -> stemName = "my video"
-    std::filesystem::path srcPath(filename);
-    std::string stemName = WStringToUTF8(srcPath.stem().wstring());
-
-    // 2. 拼接完整的输出绝对路径，并手动加上双引号防空格
-    // 比如：outFolder = "D:\\Output" -> 最终生成 "D:\\Output\\my video.amv"
-    std::string finalOutputPath = "\"" + outFolder + "\\" + stemName + ".amv\"";
-
-    // 3. 拼装 FFmpeg 参数
-    std::string args = std::format(
-        R"(-y -i "{}" -vf "scale=640:480:force_original_aspect_ratio=decrease,pad=640:480:(ow-iw)/2:(oh-ih)/2:black" -ar 22050 -ac 1 -r 25 -c:v amv -c:a adpcm_ima_amv -block_size 882 {})",
-        filename, finalOutputPath);
 
 
 
-    std::string otput = outFolder + "\\" + stemName + ".amv";
-    std::cout << "输出文件夹（输出名称 output.amv）: " << otput << std::endl;
 
+    // 执行ffmpeg
+    std::string log;
+    std::cout << "args:" << args << std::endl;
     int code = RunFFmpegWithProgress(
         "ffmpeg.exe",
         "ffprobe.exe",
@@ -311,7 +401,39 @@ int main() {
         [](double percent, double cur, double total) {
             printf("\r进度: %.1f%%  (%.1f / %.1f 秒)", percent, cur, total);
             fflush(stdout);
-        });
+        },
+        &log);
+
+    
+  
+
+    if (code == 0) {
+        std::cout << "转码成功！"<<std::endl;
+    }
+    else {
+        printf("\n异常退出退出码: %d\n", code);
+    }
+
+
+    std::cout << log << std::endl;
+    auto now = std::chrono::system_clock::now();
+    auto secs = std::chrono::duration_cast<std::chrono::seconds>(
+        now.time_since_epoch()).count();  
+
+
+    std::string fffname = "ffmpeg_log_" + std::to_string(secs) + ".txt";
+
+    // 绝对路径
+    std::string logFullPath = CurrentDir + "\\" + fffname;
+
+    std::cout << "log -> " << logFullPath << std::endl;
+
+    if (WriteTextFile(logFullPath, log)) {
+        std::cout << "written OK" << std::endl;
+    }
+    else {
+        std::cout << "write failed" << std::endl;
+    }
 
     printf("\n退出码: %d\n", code);
     return 0;

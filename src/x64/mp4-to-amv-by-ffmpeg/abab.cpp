@@ -6,8 +6,35 @@
 #include <windows.h>
 #include <vector>
 #include <cstdio>
+#include <string>
 
 namespace {
+
+    // ---------- 编码转换辅助 ----------
+
+    // UTF-8 std::string -> UTF-16 std::wstring
+    std::wstring Utf8ToWide(const std::string& s) {
+        if (s.empty()) return L"";
+        int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), NULL, 0);
+        if (n <= 0) return L"";
+        std::wstring w(n, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
+        return w;
+    }
+
+    // UTF-16 std::wstring -> UTF-8 std::string（预留，当前流程未强制使用）
+    std::string WideToUtf8(const std::wstring& w) {
+        if (w.empty()) return "";
+        int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(),
+            NULL, 0, NULL, NULL);
+        if (n <= 0) return "";
+        std::string s(n, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(),
+            &s[0], n, NULL, NULL);
+        return s;
+    }
+
+    // ---------- 通用执行并捕获输出 ----------
 
     std::string RunAndCapture(const std::string& cmdLine) {
         SECURITY_ATTRIBUTES sa;
@@ -19,7 +46,7 @@ namespace {
         if (!CreatePipe(&hRead, &hWrite, &sa, 0)) return "";
         SetHandleInformation(hRead, HANDLE_FLAG_INHERIT, 0);
 
-        STARTUPINFOA si;
+        STARTUPINFOW si;                   // 宽字符版
         ZeroMemory(&si, sizeof(si));
         si.cb = sizeof(si);
         si.dwFlags = STARTF_USESTDHANDLES;
@@ -30,15 +57,16 @@ namespace {
         PROCESS_INFORMATION pi;
         ZeroMemory(&pi, sizeof(pi));
 
-        std::vector<char> cmd(cmdLine.begin(), cmdLine.end());
-        cmd.push_back('\0');
+        std::wstring wcmd = Utf8ToWide(cmdLine);
+        std::vector<wchar_t> cmd(wcmd.begin(), wcmd.end());
+        cmd.push_back(L'\0');
 
-        BOOL ok = CreateProcessA(NULL, cmd.data(), NULL, NULL, TRUE,
+        BOOL ok = CreateProcessW(NULL, cmd.data(), NULL, NULL, TRUE,
             CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
         CloseHandle(hWrite);
         if (!ok) { CloseHandle(hRead); return ""; }
 
-        std::string out;
+        std::string out;                   // FFmpeg 输出为 UTF-8/ASCII，用 char 累积即可
         char buf[4096];
         DWORD n;
         while (ReadFile(hRead, buf, sizeof(buf) - 1, &n, NULL) && n > 0) {
@@ -74,7 +102,11 @@ namespace {
 int RunFFmpegWithProgress(const std::string& ffmpegPath,
     const std::string& ffprobePath,
     const std::string& args,
-    FFmpegProgressCallback onProgress) {
+    FFmpegProgressCallback onProgress,
+    std::string* fullOutput /* = nullptr */) {   // <-- 新增参数
+
+    if (fullOutput) fullOutput->clear();
+
     // 1. 从 args 推断输入文件，获取总时长
     double totalSec = 0.0;
     {
@@ -114,7 +146,7 @@ int RunFFmpegWithProgress(const std::string& ffmpegPath,
     if (!CreatePipe(&hRead, &hWrite, &sa, 0)) return -1;
     SetHandleInformation(hRead, HANDLE_FLAG_INHERIT, 0);
 
-    STARTUPINFOA si;
+    STARTUPINFOW si;                       // 宽字符版
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
     si.dwFlags = STARTF_USESTDHANDLES;
@@ -126,15 +158,16 @@ int RunFFmpegWithProgress(const std::string& ffmpegPath,
     ZeroMemory(&pi, sizeof(pi));
 
     std::string cmdLine = "\"" + ffmpegPath + "\" " + args;
-    std::vector<char> cmd(cmdLine.begin(), cmdLine.end());
-    cmd.push_back('\0');
+    std::wstring wcmd = Utf8ToWide(cmdLine);
+    std::vector<wchar_t> cmd(wcmd.begin(), wcmd.end());
+    cmd.push_back(L'\0');
 
-    BOOL ok = CreateProcessA(NULL, cmd.data(), NULL, NULL, TRUE,
+    BOOL ok = CreateProcessW(NULL, cmd.data(), NULL, NULL, TRUE,
         CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
     CloseHandle(hWrite);
     if (!ok) { CloseHandle(hRead); return -1; }
 
-    // 3. 循环读取 stderr，解析 time=
+    // 3. 循环读取 stderr/stdout，解析 time=，同时累积完整输出
     std::string leftover;
     char buf[4096];
     DWORD n;
@@ -146,6 +179,10 @@ int RunFFmpegWithProgress(const std::string& ffmpegPath,
         if (avail > 0) {
             if (!ReadFile(hRead, buf, sizeof(buf) - 1, &n, NULL) || n == 0) break;
             buf[n] = '\0';
+
+            // 累积完整输出（stdout + stderr 混合）
+            if (fullOutput) fullOutput->append(buf, n);
+
             leftover += buf;
 
             size_t pos;
@@ -170,6 +207,7 @@ int RunFFmpegWithProgress(const std::string& ffmpegPath,
             if (GetExitCodeProcess(pi.hProcess, &exitCode) && exitCode != STILL_ACTIVE) {
                 while (ReadFile(hRead, buf, sizeof(buf) - 1, &n, NULL) && n > 0) {
                     buf[n] = '\0';
+                    if (fullOutput) fullOutput->append(buf, n);  // <-- 收尾时也累积
                     leftover += buf;
                 }
                 break;

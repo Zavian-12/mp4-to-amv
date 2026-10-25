@@ -53,7 +53,7 @@ AMV（Anime Music Video）是许多老式 MP3/MP4 播放器支持的视频格式
 ## 构建
 
 > ⚠️ **警告：MSVC 编译时必须携带 `/utf-8` 选项。**
-> 本文件包含 UTF-8 编码的中文字符串字面量与注释，若按本地代码页（如 GBK）解析会导致乱码或编译错误。
+> 本文件包含 UTF-8 编码的中文字符串字面量与注释，若按本地代码页（如 GBK）解析 99% 会导致乱码或编译错误。
 
 使用 Visual Studio（MSVC）或 CMake 均可。示例（MSVC 命令行）：
 
@@ -67,7 +67,7 @@ cl /std:c++20 /utf-8 /EHsc main.cpp /link ole32.lib oleaut32.lib shell32.lib uui
 
 ## 使用说明
 
-1. 确保 `ffmpeg.exe` 与 `ffprobe.exe` 已在 `PATH` 中。
+1. （`with_ffmpeg` 版可以直接忽略）确保 `ffmpeg.exe` 与 `ffprobe.exe` 已在 `PATH` 中；或者将 `ffmpeg.exe` 与 `ffprobe.exe`可执行文件放在程序目录下。
 2. 运行程序，控制台会打印版本信息与 FFmpeg / FFprobe 检测结果。
 3. 弹出文件选择框，选择要转换的源视频文件，确认后按提示输入 `y` 确认。
 4. 弹出文件夹选择框，选择输出目录。
@@ -87,9 +87,9 @@ cl /std:c++20 /utf-8 /EHsc main.cpp /link ole32.lib oleaut32.lib shell32.lib uui
 mp4-to-amv Ver0.0.1-beta.1 (build:20261025)
 FFmpeg  版本 ：n9.0.2-33-g4cf298e66a-20261022
 FFprobe 版本 ：n9.0.2-33-g4cf298e66a-20261022
-源文件：D:\Videos\my video.mp4
+源文件：D:\Videos\video.mp4
 确定？(y/n) y
-输出文件夹（输出名称 output.amv）: D:\Output\my video.amv
+输出文件夹（输出名称 video.amv）: D:\Output\video.amv
 进度: 100.0%  (150.0 / 150.0 秒)
 退出码: 0
 ```
@@ -102,10 +102,10 @@ FFprobe 版本 ：n9.0.2-33-g4cf298e66a-20261022
 
 ## 已知限制
 
-- 仅支持 Windows 平台（依赖 Win32 API 与 COM 文件对话框）。
-- 转码为同步阻塞执行，期间无法取消（除非关闭控制台）。
-- 若 `ffprobe.exe` 不可用，进度条将被省略（-1%），但仍可完成转码。
-- 输出文件名若与已有文件同名，将被 `-y` 参数直接覆盖，请留意。
+- 仅支持 Windows 平台（依赖 Win32 API 与 COM 文件对话框，如果有大佬可以自己拿去改，反正写的也是依托）
+- 转码为同步阻塞执行，期间无法取消（除非关闭控制台）
+- 若 `ffprobe.exe` 不可用，进度条就会变成-1，但仍可完成转码
+- 输出文件名若与已有文件同名，将被 `-y` 参数直接覆盖，请留意
 
 
 
@@ -155,7 +155,7 @@ SOFTWARE.
 
 Copyright © 2026 [Zavian](https://github.com/Zavian-12). All rights reserved.
 本项目及其源代码、文档的著作权归 [Zavian](https://github.com/Zavian-12) 所有。
-未经书面许可，不得用于商业用途或再分发。
+未经书面许可，不得用于商业用途。
 
 ## 联系方式
 
