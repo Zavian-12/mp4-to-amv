@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="mp4-to-amv-by-ffmpeg/mp4-to-amv-by-ffmpeg.vcxproj" Id="7b5feb4c-7f27-4b82-bbc2-fc9ae8755ca6" />
+</Solution>
