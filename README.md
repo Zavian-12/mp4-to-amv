@@ -181,4 +181,4 @@ Copyright © 2026 [Zavian](https://github.com/Zavian-12). All rights reserved.
 ## 联系方式
 
 - 邮箱：`zavian@zavian.top`
-- 问题反馈：请提交 [Issue](/issues)
+- 问题反馈：请提交 [Issue](https://github.com/Zavian-12/mp4-to-amv/issues)
