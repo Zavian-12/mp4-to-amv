@@ -96,27 +96,6 @@ FFprobe 版本 ：n9.0.2-33-g4cf298e66a-20261022
 
 
 
-## 转码参数说明
-
-程序内部调用的 FFmpeg 命令等价于：
-
-```bash
-ffmpeg -y -i "<输入文件>" \
-  -vf "scale=640:480:force_original_aspect_ratio=decrease,pad=640:480:(ow-iw)/2:(oh-ih)/2:black" \
-  -ar 22050 -ac 1 -r 25 \
-  -c:v amv -c:a adpcm_ima_amv -block_size 882 \
-  "<输出文件>.amv"
-```
-
-| 参数 | 含义 |
-|------|------|
-| `scale=640:480:force_original_aspect_ratio=decrease` | 等比缩放至不超过 640×480 |
-| `pad=640:480:...:black` | 不足部分用黑边补齐 |
-| `-ar 22050 -ac 1` | 音频采样率 22050 Hz、单声道 |
-| `-r 25` | 视频帧率 25 fps |
-| `-c:v amv` | 视频编码 AMV |
-| `-c:a adpcm_ima_amv` | 音频编码 ADPCM IMA AMV |
-| `-block_size 882` | AMV 音频块大小 |
 
 
 
@@ -125,7 +104,7 @@ ffmpeg -y -i "<输入文件>" \
 
 - 仅支持 Windows 平台（依赖 Win32 API 与 COM 文件对话框）。
 - 转码为同步阻塞执行，期间无法取消（除非关闭控制台）。
-- 若 `ffprobe` 不可用，进度条将被省略，但仍可完成转码。
+- 若 `ffprobe.exe` 不可用，进度条将被省略（-1%），但仍可完成转码。
 - 输出文件名若与已有文件同名，将被 `-y` 参数直接覆盖，请留意。
 
 
